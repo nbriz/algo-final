@@ -1,7 +1,58 @@
+<title>Algo Music</title>
 <body style="background: white"></body>
 <script src="https://unpkg.com/tone"></script>
 <script src="https://algorithmicmusic.online/js/libs/nn.min.js"></script>
 <script>
 /* global Tone, nn */
+  
+const synth = new Tone.PolySynth().toDestination()
+
+const btn = nn.create('button')
+  .content('upload image')
+  .set('id', 'upload')
+  .addTo('body')
+
+const uploader = new nn.FileUploader({
+  click: '#upload',
+  ready: async (file) => {
+    const hue = await dominantHueFromBase64(file.data)
+    const arr = nn.notes
+    const idx = Math.floor((hue / 360) * arr.length) % arr.length
+    playChord(idx)
+  },
+  error: (err) => {
+    console.error(err)
+  }
+})
+
+// returns a Promise that resolves to a hue angle (0–360), or null if no meaningful hue
+async function dominantHueFromBase64 (dataURL, { bins = 36, satFloor = 20 } = {}) {
+  const hist = new Array(bins).fill(0)
+
+  await nn.modifyPixels(dataURL, pixels => {
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3]
+      if (a === 0) continue
+      const { h, s, v } = nn.rgb2hsv(r, g, b) // provided by nn
+      if (s <= satFloor) continue // s and v are 0–100 per nn docs
+      const bin = Math.floor(h / (360 / bins)) % bins
+      hist[bin] += (s / 100) * (v / 100) // weight by saturation × value
+    }
+  })
+
+  const total = hist.reduce((a, b) => a + b, 0)
+  if (total === 0) return null
+  let best = 0, bestIdx = 0
+  for (let i = 0; i < bins; i++) if (hist[i] > best) { best = hist[i]; bestIdx = i }
+  return ((bestIdx + 0.5) * (360 / bins)) % 360
+}
+
+
+function playChord (idx) {
+  const root = nn.notes[idx]
+  const scale = nn.createScale(root + '4', 'major')
+  const chord = nn.createChord(scale, 'triad')
+  synth.triggerAttackRelease(chord, '4n', Tone.now())
+}
 
 </script>
